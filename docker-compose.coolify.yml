@@ -99,8 +99,8 @@ services:
     depends_on:
       qdrant:
         condition: service_started
-      ollama-pull:
-        condition: service_completed_successfully
+      ollama:
+        condition: service_started
     restart: unless-stopped
 
 volumes:
