@@ -1,0 +1,59 @@
+# ============================================================================
+# Combined Coolify deployment compose: graphrag-server + its Qdrant dependency
+# ============================================================================
+# The upstream graphrag-server/docker-compose.yml only defines Qdrant (the
+# server itself is meant to be run separately, per graphrag-server/Dockerfile's
+# own `docker run` example). Coolify's docker-compose build pack needs both
+# services defined in one file to deploy them together, so this combines them
+# using nothing but the two source files' own confirmed shipped defaults:
+#   - graphrag-server/Dockerfile: EMBEDDING_BACKEND, EMBEDDING_DIM, QDRANT_URL,
+#     COLLECTION_NAME defaults, port 8080
+#   - graphrag-server/docker-compose.yml: the qdrant service definition
+# Build context is repo root (not graphrag-server/) because the Dockerfile
+# does `COPY . .` and needs the full Cargo workspace to build the
+# `graphrag-server` package with `cargo build --release -p graphrag-server`.
+# ============================================================================
+version: '3.8'
+
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"  # HTTP API
+      - "6334:6334"  # gRPC API
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    environment:
+      - QDRANT__LOG_LEVEL=INFO
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  graphrag-server:
+    build:
+      context: .
+      dockerfile: graphrag-server/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      # Shipped defaults from the Dockerfile itself (pure "as shipped" —
+      # no cloud embedding provider, no Ollama service added).
+      - EMBEDDING_BACKEND=hash
+      - EMBEDDING_DIM=384
+      - QDRANT_URL=http://qdrant:6334
+      - COLLECTION_NAME=graphrag
+      # Coolify magic var: generates and injects a random 64-char base64
+      # secret at deploy time, replacing the Dockerfile's placeholder
+      # JWT_SECRET=change-me-in-production default.
+      - JWT_SECRET=${SERVICE_BASE64_64_JWTSECRET}
+    depends_on:
+      - qdrant
+    restart: unless-stopped
+
+volumes:
+  qdrant_storage:
+    driver: local
