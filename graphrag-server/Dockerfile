@@ -11,7 +11,14 @@
 # Rust >=1.85 - this was a latent, pre-existing mismatch in the shipped
 # Dockerfile, never actually reached before because the build never got
 # past the (now-removed) apt-get step to run cargo at all.
-FROM rust:1-slim-bookworm AS builder
+#
+# Full (non-slim) variant, not -slim: openssl-sys's vendored build compiles
+# OpenSSL from source, which needs perl + make. The slim image (confirmed
+# from rust-lang/docker-rust's own Dockerfile-slim.template) only installs
+# ca-certificates/gcc/libc6-dev - no perl, no make - and apt-get can't add
+# them here (deb.debian.org unreachable). The full image is buildpack-deps
+# based and already includes both, so this stays a registry-only pull.
+FROM rust:1-bookworm AS builder
 
 # No apt-get here: this build environment cannot reach deb.debian.org at all
 # (every mirror returns "Connection failed" to its Fastly-hosted IP,
