@@ -50,7 +50,30 @@ services:
     entrypoint:
       - /bin/sh
       - -c
-      - "export OLLAMA_HOST=http://ollama:11434; until ollama list >/dev/null 2>&1; do sleep 2; done; ollama pull nomic-embed-text"
+      # Bare host:port, no scheme: Ollama's own Dockerfile bakes in
+      # OLLAMA_HOST=0.0.0.0:11434 (confirmed from its published source) -
+      # the Go CLI's address parser doesn't accept a "http://" prefix here,
+      # unlike graphrag-server's own OLLAMA_URL (parsed by a different,
+      # unrelated Rust crate that does want the scheme). Verbose + capped
+      # retry loop so a failure here is diagnosable from plain container
+      # logs instead of a silent, instant exit.
+      # $$ (not $): compose interpolates bare $VAR in YAML values using its
+      # own env before the container ever sees this string, so shell
+      # variables meant for the container's /bin/sh must be escaped.
+      - |
+        export OLLAMA_HOST=ollama:11434
+        echo "ollama-pull: waiting for $$OLLAMA_HOST to accept requests"
+        i=0
+        until ollama list; do
+          i=$$((i+1))
+          if [ "$$i" -ge 60 ]; then
+            echo "ollama-pull: gave up after 60 attempts (120s), still can't reach $$OLLAMA_HOST"
+            exit 1
+          fi
+          sleep 2
+        done
+        echo "ollama-pull: server is up, pulling nomic-embed-text"
+        ollama pull nomic-embed-text
     restart: "no"
 
   graphrag-server:
