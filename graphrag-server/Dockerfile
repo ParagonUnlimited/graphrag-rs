@@ -18,7 +18,13 @@ RUN cargo build --release -p graphrag-server
 # --- Stage 2: Runtime ---
 FROM debian:bookworm-slim
 
-RUN apt-get update && apt-get install -y ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
+# No apt-get here: this build environment can't reach deb.debian.org (every
+# mirror gets Ign:/Err: on `apt-get update`, reproduced twice, deterministic).
+# ca-certificates and libssl3 are copied straight from the builder image
+# instead, which already has them as part of its own base layers.
+COPY --from=builder /etc/ssl/certs /etc/ssl/certs
+COPY --from=builder /usr/lib/x86_64-linux-gnu/libssl.so* /usr/lib/x86_64-linux-gnu/
+COPY --from=builder /usr/lib/x86_64-linux-gnu/libcrypto.so* /usr/lib/x86_64-linux-gnu/
 
 COPY --from=builder /app/target/release/graphrag-server /usr/local/bin/graphrag-server
 
