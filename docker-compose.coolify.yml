@@ -80,8 +80,13 @@ services:
     build:
       context: .
       dockerfile: graphrag-server/Dockerfile
-    ports:
-      - "8080:8080"
+    # expose, not ports: publishing 8080 to the host (0.0.0.0:8080)
+    # collided with something else already bound to it on this server.
+    # Coolify's Traefik proxy reaches containers over the internal
+    # "coolify" docker network directly, so a host-level bind was never
+    # actually needed for the FQDN routing to work.
+    expose:
+      - "8080"
     environment:
       - EMBEDDING_BACKEND=ollama
       - EMBEDDING_DIM=384
