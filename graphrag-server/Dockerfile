@@ -8,24 +8,27 @@
 # --- Stage 1: Build ---
 FROM rust:1.82-slim-bookworm AS builder
 
-RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
-
+# No apt-get here: this build environment cannot reach deb.debian.org at all
+# (every mirror returns "Connection failed" to its Fastly-hosted IP,
+# reproduced deterministically in both stages). pkg-config/libssl-dev are no
+# longer needed - graphrag-server/Cargo.toml pins openssl's "vendored"
+# feature, which compiles OpenSSL from its own bundled source instead of
+# linking a system libssl, so the whole workspace builds with zero apt calls.
 WORKDIR /app
 COPY . .
 
-RUN cargo build --release -p graphrag-server
+# --features ollama: compiles in the real Ollama-backed embedding client
+# (ollama-rs) alongside the default "qdrant" feature, instead of only the
+# hash fallback.
+RUN cargo build --release -p graphrag-server --features ollama
 
 # --- Stage 2: Runtime ---
 FROM debian:bookworm-slim
 
-# No apt-get here: this build environment can't reach deb.debian.org (every
-# mirror gets Ign:/Err: on `apt-get update`, reproduced twice, deterministic).
-# ca-certificates and libssl3 are copied straight from the builder image
-# instead, which already has them as part of its own base layers.
-COPY --from=builder /etc/ssl/certs /etc/ssl/certs
-COPY --from=builder /usr/lib/x86_64-linux-gnu/libssl.so* /usr/lib/x86_64-linux-gnu/
-COPY --from=builder /usr/lib/x86_64-linux-gnu/libcrypto.so* /usr/lib/x86_64-linux-gnu/
-
+# No apt-get here either, for the same reason. ca-certificates isn't needed:
+# graphrag-server only calls http:// (Qdrant, Ollama) at runtime, never TLS.
+# OpenSSL is statically linked in via the vendored build, so there's no
+# libssl.so runtime dependency to satisfy either.
 COPY --from=builder /app/target/release/graphrag-server /usr/local/bin/graphrag-server
 
 # Non-root user

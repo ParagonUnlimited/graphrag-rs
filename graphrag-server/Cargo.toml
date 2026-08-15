@@ -28,6 +28,15 @@ graphrag-core = { path = "../graphrag-core", features = ["caching", "lightrag", 
 # Optional: Ollama embeddings (requires main graphrag crate)
 ollama-rs = { version = "0.2", optional = true }
 
+# Forces openssl-sys (pulled in transitively via reqwest/native-tls, itself
+# pulled in by ollama-rs) to compile OpenSSL from its bundled source instead
+# of linking against a system libssl. Needed because this workspace's
+# Coolify build host cannot reach deb.debian.org (confirmed: every mirror
+# gets Connection failed to its Fastly-hosted IP), so `apt-get install
+# libssl-dev` can never succeed there - vendoring removes the need for it
+# entirely, at build time and at runtime.
+openssl = { version = "0.10", features = ["vendored"] }
+
 # Web framework - Actix-web + Apistos for OpenAPI documentation
 actix-web = { workspace = true }
 actix-cors = { workspace = true }

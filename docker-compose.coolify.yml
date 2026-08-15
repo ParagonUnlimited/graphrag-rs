@@ -33,6 +33,26 @@ services:
       retries: 3
       start_period: 40s
 
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+  # One-shot init job: pulls the embedding model into the ollama service
+  # above, then exits. graphrag-server's depends_on condition below waits
+  # for this to finish successfully before it starts, so the model is
+  # already present the first time EmbeddingService checks for it.
+  ollama-pull:
+    image: ollama/ollama:latest
+    depends_on:
+      - ollama
+    entrypoint:
+      - /bin/sh
+      - -c
+      - "export OLLAMA_HOST=http://ollama:11434; until ollama list >/dev/null 2>&1; do sleep 2; done; ollama pull nomic-embed-text"
+    restart: "no"
+
   graphrag-server:
     build:
       context: .
@@ -40,10 +60,13 @@ services:
     ports:
       - "8080:8080"
     environment:
-      # Shipped defaults from the Dockerfile itself (pure "as shipped" —
-      # no cloud embedding provider, no Ollama service added).
-      - EMBEDDING_BACKEND=hash
+      - EMBEDDING_BACKEND=ollama
       - EMBEDDING_DIM=384
+      # Host only, no port: ollama-rs's Ollama::new(host, port) call hard-
+      # codes port 11434 as its own second argument, so a URL that already
+      # includes ":11434" here would double up into "http://ollama:11434:11434".
+      - OLLAMA_URL=http://ollama
+      - OLLAMA_EMBEDDING_MODEL=nomic-embed-text
       - QDRANT_URL=http://qdrant:6334
       - COLLECTION_NAME=graphrag
       # Coolify magic var: generates and injects a random 64-char base64
@@ -51,9 +74,14 @@ services:
       # JWT_SECRET=change-me-in-production default.
       - JWT_SECRET=${SERVICE_BASE64_64_JWTSECRET}
     depends_on:
-      - qdrant
+      qdrant:
+        condition: service_started
+      ollama-pull:
+        condition: service_completed_successfully
     restart: unless-stopped
 
 volumes:
   qdrant_storage:
+    driver: local
+  ollama_data:
     driver: local
