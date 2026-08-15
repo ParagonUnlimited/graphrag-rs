@@ -6,7 +6,12 @@
 # ============================================================================
 
 # --- Stage 1: Build ---
-FROM rust:1.82-slim-bookworm AS builder
+# Floating "1" tag (not a pinned 1.82) because one of the workspace's
+# locked dependencies (apistos-gen) requires edition2024, which needs
+# Rust >=1.85 - this was a latent, pre-existing mismatch in the shipped
+# Dockerfile, never actually reached before because the build never got
+# past the (now-removed) apt-get step to run cargo at all.
+FROM rust:1-slim-bookworm AS builder
 
 # No apt-get here: this build environment cannot reach deb.debian.org at all
 # (every mirror returns "Connection failed" to its Fastly-hosted IP,
