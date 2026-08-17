@@ -98,6 +98,15 @@ services:
     # `graphrag-server` (the compose service name), which matches this
     # loadbalancer name - so this should resolve the missing upstream.
     labels:
+      # Wire the router to the loadbalancer by name (router name has a UUID
+      # suffix Coolify auto-generates, so we name the router ourselves via
+      # Traefik's standard rule-name pattern and reference the service by
+      # exact router name).
+      - "traefik.http.routers.graphrag-server.service=graphrag-server"
+      - "traefik.http.routers.graphrag-server.rule=Host(`graphrag.dobbinscodex.cloud`)"
+      - "traefik.http.routers.graphrag-server.entrypoints=https,http"
+      - "traefik.http.routers.graphrag-server.tls=true"
+      - "traefik.http.routers.graphrag-server.tls.certresolver=letsencrypt"
       - "traefik.http.services.graphrag-server.loadbalancer.server.port=8080"
     environment:
       # Coolify magic var: tells Coolify to auto-generate a wildcard
