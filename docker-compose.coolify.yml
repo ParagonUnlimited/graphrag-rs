@@ -88,6 +88,17 @@ services:
     # container itself is unaware of the external port.
     ports:
       - "9090:8080"
+    # Explicit Traefik loadbalancer label: Coolify 4.3.3's docker-compose
+    # build pack was generating the Host(`graphrag.dobbinscodex.cloud`)
+    # router but NOT the loadbalancer.server.port label, leaving upstream
+    # unset (hence the 503). Declaring only the missing label here -
+    # Coolify already generates the router/middleware labels, so adding
+    # more would risk duplicate-router conflicts. The Coolify-generated
+    # router for graphrag.dobbinscodex.cloud references service
+    # `graphrag-server` (the compose service name), which matches this
+    # loadbalancer name - so this should resolve the missing upstream.
+    labels:
+      - "traefik.http.services.graphrag-server.loadbalancer.server.port=8080"
     environment:
       # Coolify magic var: tells Coolify to auto-generate a wildcard
       # subdomain on .dobbinscodex.cloud AND wire Traefik's loadbalancer
