@@ -89,6 +89,15 @@ services:
     ports:
       - "9090:8080"
     environment:
+      # Coolify magic var: tells Coolify to auto-generate a wildcard
+      # subdomain on .dobbinscodex.cloud AND wire Traefik's loadbalancer
+      # upstream to the container's actual port (8080 - the _8080 suffix).
+      # Confirmed from Coolify docs (coolify.io/docs/knowledge-base/
+      # environment-variables) - SERVICE_URL_<NAME>_<PORT> is the canonical
+      # way to bind FQDN -> service -> upstream port in one shot.
+      # Coolify ignores the URL prefix value here; it just uses _8080
+      # to know which exposed port to wire Traefik to.
+      - SERVICE_URL_GRAPHIT_8080=https://graphrag.dobbinscodex.cloud
       - EMBEDDING_BACKEND=ollama
       - EMBEDDING_DIM=384
       # Host only, no port: ollama-rs's Ollama::new(host, port) call hard-
