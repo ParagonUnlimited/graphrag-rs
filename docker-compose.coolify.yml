@@ -80,44 +80,28 @@ services:
     build:
       context: .
       dockerfile: graphrag-server/Dockerfile
-    # Host publishes 9090 mapped to container's 8080. graphrag-server
-    # itself listens on 8080 (per its own Dockerfile EXPOSE/ENTRYPOINT).
-    # 9090 was chosen to avoid the existing host collision on 8080 and
-    # the cluster's habit of using 80xx/9xxx for application ports.
-    # Coolify's proxy (Traefik) talks to the published host port; the
-    # container itself is unaware of the external port.
-    ports:
-      - "9090:8080"
-    # Explicit Traefik loadbalancer label: Coolify 4.3.3's docker-compose
-    # build pack was generating the Host(`graphrag.dobbinscodex.cloud`)
-    # router but NOT the loadbalancer.server.port label, leaving upstream
-    # unset (hence the 503). Declaring only the missing label here -
-    # Coolify already generates the router/middleware labels, so adding
-    # more would risk duplicate-router conflicts. The Coolify-generated
-    # router for graphrag.dobbinscodex.cloud references service
-    # `graphrag-server` (the compose service name), which matches this
-    # loadbalancer name - so this should resolve the missing upstream.
-    labels:
-      # Wire the router to the loadbalancer by name (router name has a UUID
-      # suffix Coolify auto-generates, so we name the router ourselves via
-      # Traefik's standard rule-name pattern and reference the service by
-      # exact router name).
-      - "traefik.http.routers.graphrag-server.service=graphrag-server"
-      - "traefik.http.routers.graphrag-server.rule=Host(`graphrag.dobbinscodex.cloud`)"
-      - "traefik.http.routers.graphrag-server.entrypoints=https,http"
-      - "traefik.http.routers.graphrag-server.tls=true"
-      - "traefik.http.routers.graphrag-server.tls.certresolver=letsencrypt"
-      - "traefik.http.services.graphrag-server.loadbalancer.server.port=8080"
+    # expose only, matching the sibling app "paper--oxidizer" (also
+    # dockercompose build pack, same Coolify instance) which works: it
+    # uses expose: only (no host-level ports: publish) plus a
+    # docker_compose_domains entry with the CONTAINER-INTERNAL port baked
+    # into the domain URL (https://host:<container-port>). Traefik here
+    # connects to containers over the internal docker network directly
+    # (traefik.docker.network=<app-uuid> in the generated labels), never
+    # via a host-published port, so publishing one was never useful and
+    # actively caused Coolify to auto-generate a second, competing router
+    # pointing at the wrong (host-side) port. No custom traefik.* labels
+    # either - paper-oxidizer has none; Coolify's own auto-generation
+    # from docker_compose_domains + expose: is sufficient once the port
+    # in docker_compose_domains matches the container's actual port.
+    expose:
+      - "8080"
     environment:
-      # Coolify magic var: tells Coolify to auto-generate a wildcard
-      # subdomain on .dobbinscodex.cloud AND wire Traefik's loadbalancer
-      # upstream to the container's actual port (8080 - the _8080 suffix).
-      # Confirmed from Coolify docs (coolify.io/docs/knowledge-base/
-      # environment-variables) - SERVICE_URL_<NAME>_<PORT> is the canonical
-      # way to bind FQDN -> service -> upstream port in one shot.
-      # Coolify ignores the URL prefix value here; it just uses _8080
-      # to know which exposed port to wire Traefik to.
-      - SERVICE_URL_GRAPHIT_8080=https://graphrag.dobbinscodex.cloud
+      # No manual SERVICE_URL_*/SERVICE_FQDN_* here - paper-oxidizer
+      # doesn't declare one either. Coolify auto-injects SERVICE_URL_
+      # <SERVICE_NAME>/SERVICE_FQDN_<SERVICE_NAME> itself based on the
+      # compose service name; the actual FQDN -> port wiring comes from
+      # the app-level docker_compose_domains field (PATCHed separately),
+      # not from an env var declared here.
       - EMBEDDING_BACKEND=ollama
       - EMBEDDING_DIM=384
       # Host only, no port: ollama-rs's Ollama::new(host, port) call hard-
