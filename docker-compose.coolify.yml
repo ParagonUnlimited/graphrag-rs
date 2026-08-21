@@ -18,9 +18,17 @@ version: '3.8'
 services:
   qdrant:
     image: qdrant/qdrant:latest
-    ports:
-      - "6333:6333"  # HTTP API
-      - "6334:6334"  # gRPC API
+    # GOLDEN RULE: never publish a port to the host on these VPSs. These were
+    # previously `ports: ["6333:6333", "6334:6334"]`, which bound Qdrant's REST
+    # and gRPC APIs to the host interface - i.e. onto the raw VPS IP, outside
+    # Traefik, outside Cloudflare Access, outside the WAF. An unauthenticated
+    # vector DB reachable by IP regardless of any Access policy on the domain.
+    # expose: keeps both ports on the internal Docker network only, which is
+    # all graphrag-server needs to reach qdrant:6334. Qdrant is an internal
+    # dependency and has no FQDN, so it gets no Traefik router at all.
+    expose:
+      - "6333"  # HTTP API (healthcheck + internal REST)
+      - "6334"  # gRPC API (what graphrag-server's qdrant-client speaks)
     volumes:
       - qdrant_storage:/qdrant/storage
     environment:
@@ -95,6 +103,17 @@ services:
     # in docker_compose_domains matches the container's actual port.
     expose:
       - "8080"
+    # The ONE label Coolify 4.3.3 does not generate itself. Without it the
+    # Host() router has no upstream and Traefik returns 503 "no available
+    # server" (wiki F-06). Commit 7b7056b deleted this line along with the
+    # host-port publish; dropping the publish was right, dropping this was
+    # not - they were unrelated. Only this one label: the competing-router
+    # problem 7b7056b diagnosed came from ports: ["9090:8080"] making Coolify
+    # generate a second router at the host port, and that publish is now gone
+    # for good (golden rule), so the conflict cannot recur. Declaring the full
+    # router set by hand is what duplicated routers before - do not re-add it.
+    labels:
+      - "traefik.http.services.graphrag-server.loadbalancer.server.port=8080"
     environment:
       # No manual SERVICE_URL_*/SERVICE_FQDN_* here - paper-oxidizer
       # doesn't declare one either. Coolify auto-injects SERVICE_URL_
@@ -103,7 +122,14 @@ services:
       # the app-level docker_compose_domains field (PATCHed separately),
       # not from an env var declared here.
       - EMBEDDING_BACKEND=ollama
-      - EMBEDDING_DIM=384
+      # 768, NOT the Dockerfile's 384 default. 384 is the *hash* backend's
+      # dimension (graphrag-server/src/embeddings.rs:42); nomic-embed-text
+      # emits 768 (this repo's own config_handler.rs:223-224). embeddings.rs
+      # :215-218 hard-validates embedding.len() against EMBEDDING_DIM, so at
+      # 384 every Ollama call failed validation and silently fell through to
+      # the hash fallback - the server looked healthy and never once used
+      # Ollama. A silent wrong answer, not a crash.
+      - EMBEDDING_DIM=768
       # Host only, no port: ollama-rs's Ollama::new(host, port) call hard-
       # codes port 11434 as its own second argument, so a URL that already
       # includes ":11434" here would double up into "http://ollama:11434:11434".
