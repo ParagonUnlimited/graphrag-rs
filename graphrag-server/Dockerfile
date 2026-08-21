@@ -56,7 +56,27 @@ ENV EMBEDDING_BACKEND=hash \
 
 EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
-  CMD ["/usr/local/bin/graphrag-server", "--version"] || exit 1
+# NO HEALTHCHECK - deliberate, and this is the fix for the 503. The old one was:
+#   HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
+#     CMD ["/usr/local/bin/graphrag-server", "--version"] || exit 1
+# It could never pass, for two independent reasons:
+#  1. The trailing `|| exit 1` after a JSON array makes Docker parse the whole
+#     thing as SHELL form, so it actually ran
+#       /bin/sh -c '["/usr/local/bin/graphrag-server", "--version"] || exit 1'
+#     and sh cannot execute `["/usr/local/bin/graphrag-server",` -> 127 -> exit 1.
+#  2. Even in correct exec form, main.rs has NO argument parsing at all (no clap,
+#     no std::env::args), so `--version` is ignored, the binary boots the full
+#     Actix server and never exits -> 5s timeout -> unhealthy.
+# The container was therefore PERMANENTLY unhealthy. Traefik's docker provider
+# excludes unhealthy containers from a service's server list, so the
+# Host(`graphrag.dobbinscodex.cloud`) router existed and matched but its
+# loadbalancer had ZERO servers -> Traefik's WRR returns exactly
+# "503 no available server". That, not any missing Traefik label, is what caused
+# 15 straight failed deploys; the compose labels were correct all along (verified
+# against the rendered docker_compose from the Coolify API on 2026-08-21).
+# No replacement probe: this runtime stage is debian:bookworm-slim with ONLY the
+# binary copied in (no curl, no wget) and apt-get is unreachable from this build
+# host. Omitting HEALTHCHECK means Docker reports no health status at all, which
+# Traefik treats as routable.
 
 ENTRYPOINT ["graphrag-server"]
