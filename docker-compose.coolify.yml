@@ -26,9 +26,10 @@ services:
     # expose: keeps both ports on the internal Docker network only, which is
     # all graphrag-server needs to reach qdrant:6334. Qdrant is an internal
     # dependency and has no FQDN, so it gets no Traefik router at all.
-    expose:
-      - "6333"  # HTTP API (healthcheck + internal REST)
-      - "6334"  # gRPC API (what graphrag-server's qdrant-client speaks)
+    # No ports: and no expose:. Qdrant is internal-only - it has no FQDN and
+    # needs no Traefik router. Sibling containers reach it at qdrant:6334 over
+    # the internal Docker network with nothing declared here; expose: would
+    # grant no access that doesn't already exist and restrict nothing.
     volumes:
       - qdrant_storage:/qdrant/storage
     environment:
@@ -101,8 +102,8 @@ services:
     # either - paper-oxidizer has none; Coolify's own auto-generation
     # from docker_compose_domains + expose: is sufficient once the port
     # in docker_compose_domains matches the container's actual port.
-    expose:
-      - "8080"
+    # No ports: and no expose:. expose: is vestigial - Traefik reads the upstream
+    # port from loadbalancer.server.port (below), never from expose:.
     # The ONE label Coolify 4.3.3 does not generate itself. Without it the
     # Host() router has no upstream and Traefik returns 503 "no available
     # server" (wiki F-06). Commit 7b7056b deleted this line along with the
